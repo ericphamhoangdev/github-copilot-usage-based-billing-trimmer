@@ -1,0 +1,1076 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GitHub Copilot Usage-Based Billing Estimator</title>
+<style>
+  :root {
+    --bg:       #0d1117;
+    --surface:  #161b22;
+    --border:   #30363d;
+    --text:     #e6edf3;
+    --muted:    #8b949e;
+    --accent:   #388bfd;
+    --green:    #3fb950;
+    --yellow:   #d29922;
+    --red:      #f85149;
+    --purple:   #bc8cff;
+    --radius:   8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 62.5%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-size: 2.1rem;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 16px 64px;
+  }
+  header {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+  header h1 {
+    font-size: 2.2rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+  header p {
+    color: var(--muted);
+    font-size: 1.3rem;
+  }
+  .container {
+    width: 100%;
+    max-width: 860px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* ── Drop zone ── */
+  #drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    padding: 48px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    position: relative;
+  }
+  #drop-zone.drag-over {
+    border-color: var(--accent);
+    background: #161b22ee;
+  }
+  #drop-zone.has-file {
+    border-color: var(--green);
+    border-style: solid;
+  }
+  #drop-zone svg { opacity: 0.4; margin-bottom: 12px; }
+  #drop-zone.has-file svg { opacity: 0.9; color: var(--green); }
+  #drop-label {
+    font-size: 1.5rem;
+    color: var(--muted);
+  }
+  #drop-zone.has-file #drop-label { color: var(--green); }
+  #drop-hint {
+    font-size: 1.2rem;
+    color: var(--muted);
+    margin-top: 6px;
+    opacity: 0.7;
+  }
+  #file-input { display: none; }
+
+  /* ── Controls bar ── */
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .controls label {
+    color: var(--muted);
+    font-size: 1.3rem;
+    white-space: nowrap;
+  }
+  select {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 7px 12px;
+    font-size: 1.4rem;
+    cursor: pointer;
+    outline: none;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b949e' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 30px;
+    min-width: 220px;
+  }
+  select:focus { border-color: var(--accent); }
+  .spacer { flex: 1; }
+  #error-msg {
+    color: var(--red);
+    font-size: 1.3rem;
+    display: none;
+  }
+
+  /* ── Summary cards ── */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+  }
+  .card .card-label {
+    color: var(--muted);
+    font-size: 1.1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 6px;
+  }
+  .card .card-value {
+    font-size: 2.2rem;
+    font-weight: 600;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .card .card-sub {
+    font-size: 1.2rem;
+    color: var(--muted);
+    margin-top: 3px;
+  }
+  .card.highlight .card-value { color: var(--accent); }
+  .card.green .card-value { color: var(--green); }
+  .card.yellow .card-value { color: var(--yellow); }
+
+  /* ── Table ── */
+  .table-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .table-title {
+    padding: 12px 16px;
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--border);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+  }
+  thead th {
+    background: #0d1117;
+    color: var(--muted);
+    font-size: 1.1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+    padding: 10px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  thead th:not(:first-child) { text-align: right; }
+  tbody tr { transition: background 0.1s; }
+  tbody tr:hover { background: rgba(56,139,253,0.05); }
+  tbody td {
+    padding: 10px 16px;
+    border-bottom: 1px solid rgba(48,54,61,0.5);
+    font-size: 1.3rem;
+    color: var(--text);
+  }
+  tbody td:not(:first-child) { text-align: right; }
+  tbody tr:last-child td { border-bottom: none; }
+  .model-name { font-family: 'SFMono-Regular', Consolas, monospace; font-size: 1.2rem; }
+  .mult-badge {
+    display: inline-block;
+    background: rgba(188,140,255,0.12);
+    color: var(--purple);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 1.1rem;
+    font-family: monospace;
+  }
+  .mult-zero { background: rgba(139,148,158,0.1); color: var(--muted); }
+  .cost-col { color: var(--accent); }
+  .tfoot-row td {
+    border-top: 2px solid var(--border);
+    font-weight: 600;
+    color: var(--text);
+    border-bottom: none !important;
+  }
+
+  /* ── Plan comparison ── */
+  .plan-compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .plan-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+  }
+  .plan-card.active { border-color: var(--accent); }
+  .plan-card .plan-name {
+    font-weight: 600;
+    font-size: 1.5rem;
+    margin-bottom: 4px;
+  }
+  .plan-card .plan-price {
+    color: var(--muted);
+    font-size: 1.2rem;
+    margin-bottom: 12px;
+  }
+  .plan-bar-wrap {
+    background: rgba(48,54,61,0.6);
+    border-radius: 4px;
+    height: 6px;
+    margin-bottom: 8px;
+    overflow: hidden;
+  }
+  .plan-bar {
+    height: 100%;
+    border-radius: 4px;
+    background: var(--accent);
+    transition: width 0.4s ease;
+  }
+  .plan-bar.over { background: var(--red); }
+  .plan-bar.warning { background: var(--yellow); }
+  .plan-stat {
+    display: flex;
+    justify-content: space-between;
+    font-size: 1.2rem;
+  }
+  .plan-stat .used { color: var(--text); font-weight: 600; }
+  .plan-stat .total { color: var(--muted); }
+
+  /* ── Prompt list (2-level tree) ── */
+  .prompt-list { display: flex; flex-direction: column; }
+  .prompt-item { background: var(--surface); border-bottom: 1px solid var(--border); }
+  .prompt-item:last-child { border-bottom: none; }
+  .prompt-hdr {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px; cursor: pointer; user-select: none;
+    transition: background 0.1s;
+  }
+  .prompt-hdr:hover { background: rgba(56,139,253,0.05); }
+  .prompt-num { color: var(--muted); font-size: 1.1rem; font-variant-numeric: tabular-nums; min-width: 28px; flex-shrink: 0; }
+  .prompt-text { flex: 1; font-size: 1.3rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .prompt-req-count { color: var(--muted); font-size: 1.1rem; flex-shrink: 0; }
+  .prompt-chevron { color: var(--muted); font-size: 1rem; transition: transform 0.2s; flex-shrink: 0; }
+  .prompt-item.open > .prompt-hdr .prompt-chevron { transform: rotate(90deg); }
+  .prompt-body { display: none; border-top: 1px solid rgba(48,54,61,0.5); padding-bottom: 4px; }
+  .prompt-item.open > .prompt-body { display: block; }
+  /* Token table inside prompt */
+  .prompt-body .tok-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .prompt-body .tok-table thead th { background: #0a0e14; color: var(--muted); font-size: 1rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; padding: 7px 16px; text-align: left; border-bottom: 1px solid var(--border); }
+  .prompt-body .tok-table thead th:not(:first-child) { text-align: right; }
+  .prompt-body .tok-table tbody td { padding: 7px 16px; font-size: 1.2rem; color: var(--text); border-bottom: 1px solid rgba(48,54,61,0.3); }
+  .prompt-body .tok-table tbody td:not(:first-child) { text-align: right; }
+  .prompt-body .tok-table tbody tr:last-child td { border-bottom: none; }
+  .token-cached { color: var(--green); }
+  .token-fresh  { color: var(--accent); }
+  .token-out    { color: var(--yellow); }
+  .cost-new     { color: var(--red); font-variant-numeric: tabular-nums; }
+  /* Request rows (2nd level) */
+  .req-item { border-top: 1px solid rgba(48,54,61,0.4); }
+  .req-hdr {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 16px 7px 28px; cursor: pointer; user-select: none;
+    font-size: 1.1rem; color: var(--muted); transition: background 0.1s;
+  }
+  .req-hdr:hover { background: rgba(56,139,253,0.04); }
+  .req-num { font-size: 1rem; min-width: 22px; flex-shrink: 0; }
+  .req-model { font-family: 'SFMono-Regular', Consolas, monospace; color: var(--text); font-size: 1.1rem; }
+  .req-tokens { margin-left: auto; font-size: 1.1rem; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .req-chevron { color: var(--muted); font-size: 1rem; transition: transform 0.2s; flex-shrink: 0; }
+  .req-item.open > .req-hdr .req-chevron { transform: rotate(90deg); }
+  .req-body { display: none; padding: 8px 16px 12px 28px; }
+  .req-item.open > .req-body { display: block; }
+  /* Message rows */
+  .msg-row { margin-bottom: 8px; }
+  .msg-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
+  .role-badge { display: inline-block; font-size: 1rem; font-weight: 700; font-family: monospace; padding: 1px 5px; border-radius: 3px; flex-shrink: 0; }
+  .role-sys  { background: rgba(188,140,255,0.15); color: var(--purple); }
+  .role-usr  { background: rgba(56,139,253,0.15);  color: var(--accent); }
+  .role-ast  { background: rgba(210,153,34,0.15);  color: var(--yellow); }
+  .role-tool { background: rgba(63,185,80,0.15);   color: var(--green); }
+  .msg-charcount { font-size: 1.1rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .msg-toolcalls { font-size: 1.1rem; color: var(--purple); font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
+  .tc-details {
+    margin: 3px 0 4px;
+    border: 1px solid rgba(188,140,255,0.2);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .tc-summary {
+    display: flex; align-items: center; gap: 10px;
+    padding: 4px 10px; cursor: pointer; user-select: none;
+    background: rgba(188,140,255,0.07);
+    list-style: none;
+  }
+  .tc-summary::-webkit-details-marker { display: none; }
+  .tc-summary::before { content: '▶'; font-size: 0.8rem; color: var(--muted); transition: transform 0.15s; flex-shrink: 0; }
+  .tc-details[open] .tc-summary::before { transform: rotate(90deg); }
+  .tc-arglen { color: var(--muted); font-size: 1.05rem; font-family: monospace; margin-left: auto; flex-shrink: 0; }
+  .tc-args {
+    background: #070a10;
+    border-top: 1px solid rgba(188,140,255,0.15);
+    padding: 8px 12px;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-size: 1.1rem;
+    color: var(--purple);
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 260px;
+    overflow-y: auto;
+    line-height: 1.45;
+    margin: 0;
+  }
+  .msg-content {
+    background: #0a0e14; border: 1px solid rgba(48,54,61,0.6);
+    border-radius: 4px; padding: 7px 10px;
+    font-family: 'SFMono-Regular', Consolas, monospace; font-size: 1.1rem;
+    color: #8b949e; white-space: pre-wrap; word-break: break-word;
+    max-height: 220px; overflow-y: auto; line-height: 1.45;
+  }
+  .msg-content.empty { color: rgba(139,148,158,0.4); font-style: italic; }
+  /* Response section */
+  .resp-section { margin-top: 10px; border-top: 1px solid rgba(48,54,61,0.4); padding-top: 8px; }
+  .resp-label { font-size: 1rem; color: var(--muted); margin-bottom: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+  .resp-content {
+    background: #0a0e14; border: 1px solid rgba(48,54,61,0.6);
+    border-radius: 4px; padding: 7px 10px;
+    font-family: 'SFMono-Regular', Consolas, monospace; font-size: 1.1rem;
+    color: var(--text); white-space: pre-wrap; word-break: break-word;
+    max-height: 300px; overflow-y: auto; line-height: 1.45;
+  }
+
+  #results { display: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>GitHub Copilot Usage-Based Billing Estimator</h1>
+  <p>Old vs new billing model &nbsp;·&nbsp; Drop a <code>copilot_all_prompts_*.json</code> debug export</p>
+</header>
+
+<!-- Disclaimer + Guide -->
+<div style="width:100%;max-width:860px;display:flex;flex-direction:column;gap:12px;margin-bottom:4px">
+
+  <!-- Disclaimer -->
+  <div style="background:rgba(210,153,34,0.08);border:1px solid rgba(210,153,34,0.35);border-radius:8px;padding:14px 18px;font-size:1.3rem;line-height:1.65">
+    <strong style="color:var(--yellow)">⚠ Disclaimer:</strong>
+    <span style="color:var(--muted)">
+      This tool is <strong style="color:var(--text)">not endorsed by or affiliated with GitHub or Microsoft</strong>.
+      All billing calculations are the author's own interpretation of publicly available pricing information and
+      may not reflect your actual invoice. Use as an estimate only. &nbsp;·&nbsp;
+      <a href="https://github.blog/news-insights/company-news/github-copilot-is-moving-to-usage-based-billing/"
+         target="_blank" rel="noopener"
+         style="color:var(--accent)">Why does this tool exist? →</a>
+    </span>
+  </div>
+
+  <!-- Privacy assurance -->
+  <div style="background:rgba(63,185,80,0.07);border:1px solid rgba(63,185,80,0.3);border-radius:8px;padding:14px 18px;font-size:1.3rem;line-height:1.65">
+    <strong style="color:var(--green)">🔒 100% local &amp; private:</strong>
+    <span style="color:var(--muted)">
+      All processing happens entirely in your browser. No data is uploaded, transmitted, or shared.
+      Your chat logs never leave your machine.
+    </span>
+  </div>
+
+  <!-- How-to guide -->
+  <details style="background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden">
+    <summary style="padding:12px 18px;cursor:pointer;font-size:1.3rem;font-weight:600;color:var(--text);list-style:none;display:flex;align-items:center;gap:8px">
+      <span style="color:var(--accent)">▶</span> How to export your Copilot Chat debug log
+    </summary>
+    <div style="padding:4px 18px 16px;font-size:1.3rem;color:var(--muted);line-height:1.9">
+      <ol style="padding-left:20px;margin-top:8px">
+        <li>Open <strong style="color:var(--text)">VS Code</strong> and click the <strong style="color:var(--text)">Copilot Chat</strong> panel.</li>
+        <li>Click the <strong style="color:var(--text)">⋯</strong> (more actions) menu in the top-right corner of the chat panel.</li>
+        <li>Select <strong style="color:var(--text)">&ldquo;Export Debug Logs&rdquo;</strong> (not &ldquo;Export Chat&rdquo; — that lacks token metadata).</li>
+        <li>Save the resulting <code style="color:var(--purple)">copilot_all_prompts_*.json</code> file anywhere on your machine.</li>
+        <li>Drop that file into the drop zone below (or click to browse).</li>
+      </ol>
+      <p style="margin-top:10px;font-size:1.2rem">
+        <strong style="color:var(--yellow)">Note:</strong> If the exported file produces &ldquo;No requests found&rdquo;, you used
+        <em>Export Chat</em> instead of <em>Export Debug Logs</em> — the former omits token usage data.
+      </p>
+    </div>
+  </details>
+
+  <!-- Tool-bloat focus notice + repo CTA -->
+  <div style="background:rgba(56,139,253,0.07);border:1px solid rgba(56,139,253,0.3);border-radius:8px;padding:14px 18px;font-size:1.3rem;line-height:1.65;display:flex;align-items:flex-start;gap:12px">
+    <span style="font-size:1.8rem;flex-shrink:0;line-height:1.2">🔍</span>
+    <span style="color:var(--muted)">
+      <strong style="color:var(--accent)">What this version focuses on:</strong>
+      Identifying <strong style="color:var(--text)">redundant / unused tool calls</strong> — MCP server schemas
+      that get shipped to the model on every request even when never invoked, silently inflating your token bill.
+      &nbsp;·&nbsp;
+      If you find this tool useful, please
+      <a href="https://github.com/ericphamhoangdev/github-copilot-usage-based-billing-trimmer"
+         target="_blank" rel="noopener"
+         style="color:var(--accent);font-weight:600">⭐ star the repo on GitHub</a>
+      — it helps the author prioritise further research and new features.
+    </span>
+  </div>
+
+</div>
+
+<div class="container">
+
+  <!-- Drop zone -->
+  <div id="drop-zone">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+      <line x1="12" y1="18" x2="12" y2="12"/>
+      <line x1="9" y1="15" x2="15" y2="15"/>
+    </svg>
+    <div id="drop-label">Drop chat JSON here or click to browse</div>
+    <div id="drop-hint">Export via VS Code Copilot Chat ⋯ → Export Debug Logs</div>
+  </div>
+  <input type="file" id="file-input" accept=".json" style="display:none">
+
+  <!-- Controls -->
+  <div class="controls">
+    <label for="plan-select">Plan:</label>
+    <select id="plan-select">
+      <option value="pro">Pro &nbsp;— $10 / mo · 300 premium requests</option>
+      <option value="proplus" selected>Pro+ — $39 / mo · 1500 premium requests</option>
+    </select>
+    <span class="spacer"></span>
+    <span id="error-msg"></span>
+  </div>
+
+  <!-- Results (hidden until file loaded) -->
+  <div id="results">
+
+    <!-- Summary cards -->
+    <div class="cards" id="cards"></div>
+
+    <!-- Token sources panel -->
+    <div id="token-sources"></div>
+
+    <!-- Prompt list -->
+    <div id="prompt-list" style="margin-top: 10px;"></div>
+
+  </div>
+</div>
+
+<script>
+// ── Pricing data (mirrors src/premium-pricing.ts) ───────────────────────────
+
+const PRO     = { label: 'Pro',  monthly: 10, requests: 300  };
+const PRO_PLUS = { label: 'Pro+', monthly: 39, requests: 1500 };
+
+const MULTIPLIERS = {
+  'claude-haiku-4.5':   0.33,
+  'claude-opus-4.5':    3,
+  'claude-opus-4.6':    3,
+  'claude-opus-4.6-fast': 30,
+  'claude-opus-4.7':    15,
+  'claude-sonnet-4':    1,
+  'claude-sonnet-4.5':  1,
+  'claude-sonnet-4.6':  1,
+  'gemini-2.5-pro':     1,
+  'gemini-3-flash':     0.33,
+  'gemini-3.1-pro':     1,
+  'gpt-4.1':            0,
+  'gpt-4o':             0,
+  'gpt-5-mini':         0,
+  'gpt-5.2':            1,
+  'gpt-5.2-codex':      1,
+  'gpt-5.3-codex':      1,
+  'gpt-5.4':            1,
+  'gpt-5.4-mini':       0.33,
+  'gpt-5.4-nano':       0.25,
+  'gpt-5.5':            7.5,
+  'grok-code-fast-1':   0.25,
+  'raptor-mini':        0,
+};
+
+const ALIASES = {
+  'claude-opus-4':          'claude-opus-4.7',
+  'claude-haiku-4':         'claude-haiku-4.5',
+  'gpt-4o-mini':            'gpt-5-mini',
+  'gpt-4o-mini-2024-07-18': 'gpt-5-mini',
+};
+
+function normalise(id) {
+  if (!id) return null;
+  const k = id.toLowerCase().trim();
+  if (k in MULTIPLIERS) return k;
+  if (ALIASES[k]) return ALIASES[k];
+  const stripped = k.replace(/^[^/]+\//, '');
+  if (stripped in MULTIPLIERS) return stripped;
+  if (ALIASES[stripped]) return ALIASES[stripped];
+  return null;
+}
+
+// ── Token-based pricing (effective 2026-06-01) ────────────────────────────
+// Source: https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing
+// All rates are $ per 1M tokens.
+const TOKEN_PRICING = {
+  // OpenAI
+  'gpt-4.1':          { i: 2.00,  c: 0.500,  o: 8.00,  free: true  },
+  'gpt-5-mini':       { i: 0.25,  c: 0.025,  o: 2.00,  free: true  },
+  'gpt-4o':           { i: 0.00,  c: 0.000,  o: 0.00,  free: true  },
+  'gpt-5.2':          { i: 1.75,  c: 0.175,  o: 14.00 },
+  'gpt-5.2-codex':    { i: 1.75,  c: 0.175,  o: 14.00 },
+  'gpt-5.3-codex':    { i: 1.75,  c: 0.175,  o: 14.00 },
+  'gpt-5.4':          { i: 2.50,  c: 0.250,  o: 15.00 },
+  'gpt-5.4-mini':     { i: 0.75,  c: 0.075,  o: 4.50  },
+  'gpt-5.4-nano':     { i: 0.20,  c: 0.020,  o: 1.25  },
+  'gpt-5.5':          { i: 5.00,  c: 0.500,  o: 30.00 },
+  // Anthropic
+  'claude-haiku-4.5':  { i: 1.00, c: 0.10,  o: 5.00  },
+  'claude-sonnet-4':   { i: 3.00, c: 0.30,  o: 15.00 },
+  'claude-sonnet-4.5': { i: 3.00, c: 0.30,  o: 15.00 },
+  'claude-sonnet-4.6': { i: 3.00, c: 0.30,  o: 15.00 },
+  'claude-opus-4.5':   { i: 5.00, c: 0.50,  o: 25.00 },
+  'claude-opus-4.6':   { i: 5.00, c: 0.50,  o: 25.00 },
+  'claude-opus-4.7':   { i: 5.00, c: 0.50,  o: 25.00 },
+  // Google
+  'gemini-2.5-pro':    { i: 1.25, c: 0.125, o: 10.00 },
+  'gemini-3-flash':    { i: 0.50, c: 0.050, o: 3.00  },
+  'gemini-3.1-pro':    { i: 2.00, c: 0.200, o: 12.00 },
+  // xAI
+  'grok-code-fast-1':  { i: 0.20, c: 0.020, o: 1.50  },
+  // Fine-tuned (GitHub)
+  'raptor-mini':       { i: 0.25, c: 0.025, o: 2.00,  free: true  },
+};
+
+function calcNewCost(model, fresh, cached, output) {
+  const r = TOKEN_PRICING[model];
+  if (!r) return null;
+  if (r.free) return 0;
+  return (fresh  / 1e6) * r.i
+       + (cached / 1e6) * r.c
+       + (output / 1e6) * r.o;
+}
+
+// ── State ────────────────────────────────────────────────────────────────────
+
+let scanData = null; // parsed scan result
+
+// ── File handling ─────────────────────────────────────────────────────────────
+
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+const planSelect = document.getElementById('plan-select');
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) loadFile(file);
+});
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) loadFile(fileInput.files[0]); });
+planSelect.addEventListener('change', () => { if (scanData) render(scanData); });
+
+function loadFile(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!Array.isArray(data.prompts)) throw new Error('Missing "prompts" array — use Export Debug Logs');
+      scanData = scan(data);
+      dropZone.classList.add('has-file');
+      document.getElementById('drop-label').textContent = '📄 ' + file.name;
+      document.getElementById('drop-hint').textContent = `${data.prompts.length} prompt(s) · loaded`;
+      showError('');
+      render(scanData);
+    } catch (err) {
+      showError(err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+function showError(msg) {
+  const el = document.getElementById('error-msg');
+  el.textContent = msg;
+  el.style.display = msg ? 'block' : 'none';
+}
+
+// ── Scanner ───────────────────────────────────────────────────────────────────
+
+function scan(data) {
+  const perModel = new Map();
+  let totalPrompts = 0;
+  let totalPremiumReqs = 0;
+  let totalCostPro = 0;
+  let totalCostProPlus = 0;
+  const unknown = new Set();
+  const proRate  = PRO.monthly / PRO.requests;
+  const plusRate = PRO_PLUS.monthly / PRO_PLUS.requests;
+  const promptDetails = [];
+
+  for (const prompt of data.prompts) {
+    if (!Array.isArray(prompt.logs)) continue;
+
+    let maxMult = -1;
+    let maxKey  = null;
+    const modelsInPrompt = new Set();
+    const reqDetails = [];
+
+    // ── Tool-bloat detection (per prompt) ────────────────────────────────
+    // Tools the model actually invoked (kind:'toolCall' entries):
+    const usedToolNames = new Set();
+    for (const log of prompt.logs) {
+      if (log.kind === 'toolCall' && log.tool) usedToolNames.add(log.tool);
+    }
+    // Tool schemas shipped — take the first request that defines them:
+    let allToolNames = [];
+    let allToolObjects = [];
+    for (const log of prompt.logs) {
+      if (log.kind === 'request' && Array.isArray(log.metadata?.tools) && log.metadata.tools.length > 0) {
+        allToolObjects = log.metadata.tools;
+        allToolNames = allToolObjects.map(t => t.name);
+        break;
+      }
+    }
+    const unusedToolObjects = allToolObjects.filter(t => !usedToolNames.has(t.name));
+    const estTokens = arr => Math.round(arr.reduce((s, t) =>
+      s + (t.name ?? '').length
+        + (t.description ?? '').length
+        + JSON.stringify(t.input_schema ?? {}).length, 0) / 4);
+    const totalSchemaTokens  = estTokens(allToolObjects);
+    const unusedSchemaTokens = estTokens(unusedToolObjects);
+
+    for (const log of prompt.logs) {
+      if (log.kind !== 'request') continue;
+      const rawModel = log.metadata?.model;
+      const key = normalise(rawModel);
+      if (!key) { if (rawModel) unknown.add(rawModel); continue; }
+      modelsInPrompt.add(key);
+      const mult = MULTIPLIERS[key];
+      if (mult > maxMult) { maxMult = mult; maxKey = key; }
+
+      const usage = log.metadata?.usage;
+      const pt = usage?.prompt_tokens ?? 0;
+      const ct = usage?.prompt_tokens_details?.cached_tokens ?? 0;
+
+      // Extract text from content array (type 1 = text blocks)
+      const extractText = content => {
+        if (!content) return '';
+        if (typeof content === 'string') return content;
+        if (Array.isArray(content)) return content.filter(c => c && c.type === 1 && c.text).map(c => c.text).join('\n');
+        return '';
+      };
+      const msgs = (log.requestMessages?.messages ?? []).map(msg => {
+        const text = extractText(msg.content);
+        return {
+          role: msg.role ?? 0,
+          text,
+          charCount: text.length,
+          toolCallNames: (msg.toolCalls ?? []).map(tc => tc.function?.name).filter(Boolean),
+          toolCalls: (msg.toolCalls ?? []).map(tc => ({
+            name: tc.function?.name ?? '?',
+            args: tc.function?.arguments ?? '',
+          })),
+        };
+      });
+      const respArr = log.response?.message ?? [];
+      const respText = respArr.map(m => typeof m === 'string' ? m : JSON.stringify(m, null, 2)).join('\n');
+
+      const compTokens = usage?.completion_tokens ?? 0;
+      const newCost = calcNewCost(key, pt - ct, ct, compTokens);
+
+      if (usage || msgs.length > 0) {
+        reqDetails.push({
+          model: key,
+          promptTokens: pt,
+          cachedTokens: ct,
+          freshTokens: pt - ct,
+          completionTokens: compTokens,
+          multiplier: mult,
+          newCost,
+          messages: msgs,
+          responseText: respText,
+          responseCharCount: respText.length,
+        });
+      }
+    }
+
+    if (reqDetails.length > 0) {
+      const raw = prompt.prompt ?? '';
+      const txt = (Array.isArray(raw) ? raw.join(' ') : String(raw)).trim();
+      promptDetails.push({
+        text: txt || '(empty)',
+        requests: reqDetails,
+        toolBloat: {
+          totalTools:          allToolNames.length,
+          allToolNames:        [...allToolNames],
+          usedTools:           [...usedToolNames],
+          unusedToolCount:     unusedToolObjects.length,
+          totalSchemaTokens,
+          unusedSchemaTokens,
+          unusedToolNames:     unusedToolObjects.map(t => t.name),
+        },
+      });
+    }
+
+    if (maxKey === null) continue;
+
+    totalPrompts++;
+    totalPremiumReqs += maxMult;
+    totalCostPro     += maxMult * proRate;
+    totalCostProPlus += maxMult * plusRate;
+
+    const acc = perModel.get(maxKey) ?? {
+      prompts: 0, premiumReqs: 0, costPro: 0, costProPlus: 0,
+      multiplier: maxMult, modelsInvolved: new Set(),
+    };
+    acc.prompts++;
+    acc.premiumReqs   += maxMult;
+    acc.costPro       += maxMult * proRate;
+    acc.costProPlus   += maxMult * plusRate;
+    for (const m of modelsInPrompt) acc.modelsInvolved.add(m);
+    perModel.set(maxKey, acc);
+  }
+
+  // Compute total new (token-based) cost across all requests in all prompts
+  let totalNewCost = 0;
+  for (const p of promptDetails)
+    for (const r of p.requests)
+      if (r.newCost !== null) totalNewCost += r.newCost;
+
+  return { perModel, totalPrompts, totalPremiumReqs, totalCostPro, totalCostProPlus, unknown, promptDetails, totalNewCost };
+}
+
+// ── Tool source classification ────────────────────────────────────────────────
+
+const SOURCE_PREFIXES = [
+  { prefix: 'mcp_chrome-devtoo_', label: 'Chrome DevTools MCP', strip: true },
+  { prefix: 'mcp_agent-face_',    label: 'Agent Face MCP',      strip: true },
+  { prefix: 'unity_',             label: 'Unity MCP',           strip: true },
+  { prefix: 'vercel_',            label: 'Vercel MCP',          strip: true },
+  { prefix: 'google_analytics_',  label: 'Google Analytics MCP', strip: true },
+  { prefix: 'ga_',                label: 'Google Analytics MCP', strip: true },
+];
+
+function getToolSource(name) {
+  for (const sp of SOURCE_PREFIXES) {
+    if (name.startsWith(sp.prefix)) return sp;
+  }
+  return { prefix: '', label: 'VS Code builtins', strip: false };
+}
+
+function groupToolsBySource(allToolNames, usedSet) {
+  const groups = new Map();
+  for (const name of allToolNames) {
+    const sp = getToolSource(name);
+    if (!groups.has(sp.label)) {
+      groups.set(sp.label, { label: sp.label, prefix: sp.prefix, strip: sp.strip, tools: [] });
+    }
+    groups.get(sp.label).tools.push({ name, used: usedSet.has(name) });
+  }
+  // sort by most-wasted first
+  return [...groups.values()].sort((a, b) =>
+    b.tools.filter(t => !t.used).length - a.tools.filter(t => !t.used).length
+  );
+}
+
+function renderToolTree(allToolNames, usedSet) {
+  if (!allToolNames || allToolNames.length === 0) return '';
+  const groups     = groupToolsBySource(allToolNames, usedSet);
+  const usedCount  = allToolNames.filter(n => usedSet.has(n)).length;
+  const unusedCount = allToolNames.length - usedCount;
+  const lines = [];
+  lines.push(`<span style="color:var(--text);font-weight:600">All tools (${allToolNames.length}&nbsp;&nbsp;·&nbsp;&nbsp;<span style="color:var(--green)">${usedCount} used</span>&nbsp;&nbsp;·&nbsp;&nbsp;<span style="color:var(--red)">${unusedCount} unused</span>)</span>`);
+  groups.forEach((g, gi) => {
+    const isLastGrp = gi === groups.length - 1;
+    const gUsed   = g.tools.filter(t => t.used).length;
+    const gUnused = g.tools.length - gUsed;
+    const con  = isLastGrp ? '└─' : '├─';
+    const pad  = isLastGrp ? '   ' : '│  ';
+    const col  = gUnused === g.tools.length ? 'var(--red)'
+               : gUsed   === g.tools.length ? 'var(--green)'
+               : 'var(--yellow)';
+    lines.push(`<span style="color:var(--muted)">${con}&nbsp;</span><span style="color:${col};font-weight:600">${escHtml(g.label)}</span><span style="color:var(--muted)"> (${g.tools.length}&nbsp;·&nbsp;${gUsed} used&nbsp;·&nbsp;${gUnused} unused)</span>`);
+    g.tools.forEach((t, ti) => {
+      const isLastTool = ti === g.tools.length - 1;
+      const tc  = isLastTool ? '└─' : '├─';
+      const dn  = (g.strip && g.prefix) ? t.name.slice(g.prefix.length) : t.name;
+      const col = t.used ? 'var(--green)' : 'var(--muted)';
+      const ico = t.used ? '✓' : '·';
+      lines.push(`<span style="color:var(--muted)">${pad}${tc}&nbsp;</span><span style="color:${col}">${ico} ${escHtml(dn)}</span>`);
+    });
+  });
+  return `<pre style="font-family:'SFMono-Regular',Consolas,monospace;font-size:1.1rem;line-height:1.65;background:#070a10;padding:12px 16px;border-radius:4px;overflow-x:auto;margin:0;white-space:pre">${lines.join('\n')}</pre>`;
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+
+function fmt(n) { return '$' + n.toFixed(4); }
+function fmtBig(n) { return '$' + n.toFixed(2); }
+function pct(n) { return n.toFixed(1) + '%'; }
+
+function render({ perModel, totalPrompts, totalPremiumReqs, totalCostPro, totalCostProPlus, unknown, promptDetails, totalNewCost }) {
+  const plan = planSelect.value;
+  const planDef = plan === 'proplus' ? PRO_PLUS : PRO;
+  const planCost = plan === 'proplus' ? totalCostProPlus : totalCostPro;
+  const usagePct = Math.min((totalPremiumReqs / planDef.requests) * 100, 100);
+
+  document.getElementById('results').style.display = 'block';
+
+  // ── Aggregate token sources across all priced requests ─────────────────────────
+  let totalIn = 0, totalCached = 0, totalFresh = 0, totalOut = 0, reqCount = 0;
+  let totalSchemaToksAcrossReqs = 0, totalUnusedSchemaToksAcrossReqs = 0;
+  let maxToolsPerReq = 0;
+  const allUsedTools = new Set();
+  const allUnusedTools = new Set();
+  for (const p of promptDetails) {
+    for (const r of p.requests) {
+      if (r.promptTokens > 0) {
+        totalIn     += r.promptTokens;
+        totalCached += r.cachedTokens;
+        totalFresh  += r.freshTokens;
+        totalOut    += r.completionTokens;
+        reqCount++;
+        // each priced request re-ships the same schemas:
+        totalSchemaToksAcrossReqs       += p.toolBloat.totalSchemaTokens;
+        totalUnusedSchemaToksAcrossReqs += p.toolBloat.unusedSchemaTokens;
+      }
+    }
+    if (p.toolBloat.totalTools > maxToolsPerReq) maxToolsPerReq = p.toolBloat.totalTools;
+    for (const t of p.toolBloat.usedTools)        allUsedTools.add(t);
+    for (const t of p.toolBloat.unusedToolNames) allUnusedTools.add(t);
+  }
+  const sessionCacheRate = totalIn > 0 ? Math.round(totalCached / totalIn * 100) : 0;
+  const sessionUnusedPct = maxToolsPerReq > 0
+    ? Math.round([...allUnusedTools].length / maxToolsPerReq * 100) : 0;
+
+  // ── Cards ────────────────────────────────────────────────────────────────────────────────
+  const cards = [
+    { label: 'Old Price (req-based)', value: fmtBig(planCost), sub: `${planDef.label} · multiplier billing`, cls: 'highlight' },
+    { label: 'New Price (token-based)', value: fmtBig(totalNewCost), sub: 'from 2026-06-01', cls: totalNewCost < planCost ? 'green' : 'yellow' },
+    (() => {
+      const diff = totalNewCost - planCost;
+      const paying = diff > 0 ? 'extra' : 'less';
+      const cls = diff > 0 ? 'yellow' : 'green';
+      const sub = diff > 0 ? 'more expensive on tokens' : 'cheaper on tokens';
+      return { label: `You will pay ${paying}`, value: fmtBig(Math.abs(diff)), sub, cls };
+    })(),
+  ];
+  document.getElementById('cards').innerHTML = cards.map(c =>
+    `<div class="card ${c.cls}">
+      <div class="card-label">${c.label}</div>
+      <div class="card-value">${c.value}</div>
+      <div class="card-sub">${c.sub}</div>
+    </div>`
+  ).join('');
+
+  // ── Token-sources section ────────────────────────────────────────────────────────────────────
+  renderTokenSources({
+    totalIn, totalCached, totalFresh, totalOut, reqCount,
+    totalSchemaToksAcrossReqs, totalUnusedSchemaToksAcrossReqs,
+    maxToolsPerReq, usedTools: allUsedTools, unusedTools: allUnusedTools,
+  });
+
+  // ── Prompt list ───────────────────────────────────────────────────────────
+  const planRate = planDef.monthly / planDef.requests;
+  renderPrompts(promptDetails, planRate);
+
+  // Unknown model warning
+  if (unknown.size > 0) {
+    showError(`⚠ ${unknown.size} unrecognised model(s) skipped: ${[...unknown].join(', ')}`);
+  }
+}
+
+const ROLE_LABELS = ['SYS', 'USR', 'AST', 'TOOL'];
+const ROLE_CLASSES = ['role-sys', 'role-usr', 'role-ast', 'role-tool'];
+
+function fmtTok(n) {
+  if (n === null || n === undefined) return '—';
+  if (n === 0) return '<span style="color:var(--muted)">$0.00</span>';
+  // Use enough decimals to show at least 2 significant figures
+  const d = n < 0.001 ? 6 : n < 0.01 ? 5 : n < 0.1 ? 4 : 2;
+  return '$' + n.toFixed(d);
+}
+
+function renderPrompts(promptDetails, planRate) {
+  const el = document.getElementById('prompt-list');
+  if (!promptDetails || promptDetails.length === 0) { el.innerHTML = ''; return; }
+
+  const rows = promptDetails.map((p, pi) => {
+    // Request detail rows (2nd level) — shown directly, no redundant summary table
+    const reqItems = p.requests.map((r, ri) => buildReqItem(pi, ri, r, planRate)).join('');
+
+    const totalIn   = p.requests.reduce((s, r) => s + r.promptTokens, 0);
+    const totalCached = p.requests.reduce((s, r) => s + r.cachedTokens, 0);
+    const totalFresh  = p.requests.reduce((s, r) => s + r.freshTokens, 0);
+    const totalOut  = p.requests.reduce((s, r) => s + r.completionTokens, 0);
+    // Old prompt cost = max multiplier × planRate (old billing: one charge per prompt)
+    const maxMult  = p.requests.reduce((m, r) => Math.max(m, r.multiplier), 0);
+    const promptOld = maxMult * planRate;
+    const promptNew = p.requests.reduce((s, r) => s + (r.newCost ?? 0), 0);
+
+    const cacheRatePct = totalIn > 0 ? Math.round(totalCached / totalIn * 100) : 0;
+
+    // Tool bloat banner (inside the body)
+    const tb = p.toolBloat;
+    const pricedReqs = p.requests.filter(r => r.promptTokens > 0).length;
+    const wastedAcrossReqs = tb.unusedSchemaTokens * pricedReqs;
+    const bloatPct = tb.totalTools > 0 ? Math.round(tb.unusedToolCount / tb.totalTools * 100) : 0;
+    const bloatBanner = tb.totalTools > 0 ? `
+      <div style="padding:8px 16px;background:rgba(248,81,73,0.06);border-bottom:1px solid var(--border);font-size:1.15rem;color:var(--muted)">
+        <strong style="color:var(--red)">🚨 Tool bloat:</strong>
+        ${tb.totalTools} tools shipped, only <strong style="color:var(--green)">${tb.usedTools.length}</strong> actually used
+        — <strong style="color:var(--red)">${tb.unusedToolCount} wasted</strong> (${bloatPct}%)
+        — ~<strong>${tb.unusedSchemaTokens.toLocaleString()}</strong> tokens of dead schema per request
+        → ~<strong style="color:var(--red)">${wastedAcrossReqs.toLocaleString()}</strong> total tokens wasted across ${pricedReqs} priced reqs.
+        <span title="Estimation method: (name.length + description.length + JSON.stringify(input_schema).length) ÷ 4. Rule of thumb: 1 token ≈ 4 characters for ASCII/JSON text. Actual tokenizer counts may differ by ±20%." style="display:inline-flex;align-items:center;gap:3px;margin-left:6px;background:rgba(210,153,34,0.15);color:var(--yellow);border:1px solid rgba(210,153,34,0.35);border-radius:4px;padding:1px 6px;font-size:1.05rem;cursor:help;vertical-align:middle">ℹ estimate: 1 tok ≈ 4 chars</span>
+        <details style="margin-top:6px"><summary style="cursor:pointer;color:var(--accent)">show used / unused tool lists</summary>
+          <div style="margin-top:8px">${renderToolTree(tb.allToolNames, new Set(tb.usedTools))}</div>
+        </details>
+      </div>` : '';
+
+    return `<div class="prompt-item" id="pi-${pi}">
+      <div class="prompt-hdr" onclick="togglePrompt(${pi})">
+        <span class="prompt-num">#${pi + 1}</span>
+        <span class="prompt-text">${escHtml(p.text)}</span>
+        <span class="prompt-req-count">${p.requests.length} req &nbsp;·&nbsp; <span style="color:var(--muted)">${totalIn.toLocaleString()} in</span> <span class="token-cached">${cacheRatePct}% cached</span> · <span class="token-out">${totalOut.toLocaleString()} out</span> &nbsp;·&nbsp; <span class="cost-col">old ${fmtTok(promptOld)}</span> <span class="cost-new">new ${fmtTok(promptNew)}</span></span>
+        <span class="prompt-chevron">▶</span>
+      </div>
+      <div class="prompt-body">
+        ${bloatBanner}
+        ${reqItems}
+      </div>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = `<div class="table-wrap">
+    <div class="table-title">All Prompts — Full Detail (${promptDetails.length} prompts)</div>
+    <div class="prompt-list">${rows}</div>
+  </div>`;
+}
+
+// ── Token-source breakdown (session-wide) ─────────────────────────────────────────
+function renderTokenSources(s) {
+  const el = document.getElementById('token-sources');
+  if (!el) return;
+  if (s.totalIn === 0) { el.innerHTML = ''; return; }
+
+  // Bar widths normalised to totalIn (input tokens only, since output is its own thing)
+  const schemaShare = Math.min(100, Math.round(s.totalSchemaToksAcrossReqs / s.totalIn * 100));
+  const wasteShare  = Math.min(100, Math.round(s.totalUnusedSchemaToksAcrossReqs / s.totalIn * 100));
+  const cachedShare = Math.round(s.totalCached / s.totalIn * 100);
+  const freshShare  = 100 - cachedShare;
+
+  const bar = (label, pct, val, cls) => `
+    <div style="display:flex;align-items:center;gap:10px;padding:5px 0;font-size:1.25rem">
+      <div style="width:230px;flex-shrink:0;color:var(--text)">${label}</div>
+      <div style="flex:1;background:rgba(48,54,61,0.6);height:16px;border-radius:4px;overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:var(--${cls})"></div>
+      </div>
+      <div style="width:170px;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums;flex-shrink:0">${val}</div>
+    </div>`;
+}
+
+function buildReqItem(pi, ri, r, planRate) {
+  const cacheRate = r.promptTokens > 0 ? Math.round(r.cachedTokens / r.promptTokens * 100) : 0;
+  const tokenSummary = r.promptTokens > 0
+    ? `<span style="color:var(--muted)">${r.promptTokens.toLocaleString()} in</span> · <span class="token-cached">${r.cachedTokens.toLocaleString()} cached</span> · <span class="token-fresh">${r.freshTokens.toLocaleString()} fresh</span> · <span class="token-out">${r.completionTokens.toLocaleString()} out</span> · <span class="cost-new">${fmtTok(r.newCost)}</span>`
+    : 'no usage data';
+
+  const msgBlocks = r.messages.map((msg, mi) => {
+    const roleIdx = Math.min(msg.role, 3);
+    const roleLabel = ROLE_LABELS[roleIdx] ?? String(msg.role);
+    const roleCls = ROLE_CLASSES[roleIdx] ?? 'role-sys';
+    const toolStr = msg.toolCalls && msg.toolCalls.length > 0
+      ? msg.toolCalls.map((tc, tci) => {
+          let argsDisplay = tc.args;
+          try {
+            const parsed = JSON.parse(tc.args);
+            argsDisplay = JSON.stringify(parsed, null, 2);
+          } catch (_) {}
+          const argsId = `tc-${pi}-${ri}-${mi}-${tci}`;
+          return `<details class="tc-details" id="${argsId}">
+            <summary class="tc-summary" onclick="event.stopPropagation()">
+              <span class="msg-toolcalls">[tool: ${escHtml(tc.name)}]</span>
+              <span class="tc-arglen">${tc.args.length.toLocaleString()} chars</span>
+            </summary>
+            <pre class="tc-args">${escHtml(argsDisplay)}</pre>
+          </details>`;
+        }).join('')
+      : '';
+    const contentDisplay = msg.text.trim() || '(empty)';
+    const emptyClass = msg.text.trim() ? '' : ' empty';
+    return `<div class="msg-row">
+      <div class="msg-meta">
+        <span class="role-badge ${roleCls}">${roleLabel}</span>
+        <span class="msg-charcount">${msg.charCount.toLocaleString()} chars</span>
+      </div>
+      ${toolStr}
+      <div class="msg-content${emptyClass}">${escHtml(contentDisplay)}</div>
+    </div>`;
+  }).join('');
+
+  const respBlock = r.responseText
+    ? `<div class="resp-section">
+        <div class="resp-label">Response (${r.responseCharCount.toLocaleString()} chars)</div>
+        <div class="resp-content">${escHtml(r.responseText)}</div>
+      </div>`
+    : '';
+
+  return `<div class="req-item" id="req-${pi}-${ri}">
+    <div class="req-hdr" onclick="toggleReq(${pi},${ri})">
+      <span class="req-num">↳ ${ri + 1}</span>
+      <span class="req-model">${escHtml(r.model)}</span>
+      <span class="req-tokens">${tokenSummary}</span>
+      <span class="req-chevron">▶</span>
+    </div>
+    <div class="req-body">
+      ${msgBlocks}
+      ${respBlock}
+    </div>
+  </div>`;
+}
+
+function togglePrompt(i) {
+  document.getElementById('pi-' + i).classList.toggle('open');
+}
+
+function toggleReq(pi, ri) {
+  document.getElementById(`req-${pi}-${ri}`).classList.toggle('open');
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+</script>
+
+</body>
+</html>
