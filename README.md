@@ -1,5 +1,7 @@
 # GitHub Copilot Usage-Based Billing Trimmer
 
+## 👉 [Open the tool](https://ericphamhoangdev.github.io/github-copilot-usage-based-billing-trimmer/) — no install, runs entirely in your browser
+
 A self-contained, browser-only tool that analyses your GitHub Copilot Chat debug logs and shows you **how much your sessions will cost under the new token-based billing model** (effective 2026-06-01) — with a focus on identifying **redundant MCP tool schemas** that silently inflate every request.
 
 > ⚠ This tool is not endorsed by or affiliated with GitHub or Microsoft. All calculations are the author's own interpretation of publicly available pricing data.
@@ -38,9 +40,9 @@ This tool helps you:
 
 ### 2. Open the tool
 
-Open the tool directly in your browser — no install, no server needed:
-
 **[https://ericphamhoangdev.github.io/github-copilot-usage-based-billing-trimmer/](https://ericphamhoangdev.github.io/github-copilot-usage-based-billing-trimmer/)**
+
+No install, no server — runs entirely in your browser.
 
 ### 3. Drop your file
 
@@ -58,13 +60,13 @@ Drag-and-drop the exported JSON onto the drop zone, or click to browse.
 
 Rates are embedded from the [GitHub Copilot billing documentation](https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing) (effective 2026-06-01, 1 credit = $0.01 USD).
 
-| Provider  | Models included |
-|-----------|----------------|
-| OpenAI    | gpt-4.1, gpt-5-mini, gpt-4o, gpt-5.2/5.3/5.4/5.5 series |
-| Anthropic | claude-haiku-4.5, claude-sonnet-4/4.5/4.6, claude-opus-4.5/4.6/4.7 |
-| Google    | gemini-2.5-pro, gemini-3-flash, gemini-3.1-pro |
-| xAI       | grok-code-fast-1 |
-| GitHub    | raptor-mini |
+| Provider  | Models included | Notes |
+|-----------|----------------|-------|
+| OpenAI    | gpt-4.1 ⓘ, gpt-5-mini ⓘ, gpt-4o, gpt-5.2/5.3/5.4/5.5 series | ⓘ = included model (counts against plan allowance) |
+| Anthropic | claude-haiku-4.5, claude-sonnet-4/4.5/4.6, claude-opus-4.5/4.6/4.7 | |
+| Google    | gemini-2.5-pro, gemini-3-flash, gemini-3.1-pro | |
+| xAI       | grok-code-fast-1 | |
+| GitHub    | raptor-mini, goldeneye | |
 
 ---
 
