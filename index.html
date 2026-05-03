@@ -502,6 +502,8 @@ const MULTIPLIERS = {
   'gemini-3.1-pro':     1,
   'gpt-4.1':            0,
   'gpt-4o':             0,
+  'gpt-4o-mini':        0,
+  'gpt-4o-mini-2024-07-18': 0,
   'gpt-5-mini':         0,
   'gpt-5.2':            1,
   'gpt-5.2-codex':      1,
@@ -517,8 +519,6 @@ const MULTIPLIERS = {
 const ALIASES = {
   'claude-opus-4':          'claude-opus-4.7',
   'claude-haiku-4':         'claude-haiku-4.5',
-  'gpt-4o-mini':            'gpt-5-mini',
-  'gpt-4o-mini-2024-07-18': 'gpt-5-mini',
 };
 
 function normalise(id) {
@@ -539,8 +539,10 @@ const TOKEN_PRICING = {
   // OpenAI — included models (count against plan's AI credit allowance)
   'gpt-4.1':          { i: 2.00,  c: 0.500,  o: 8.00  },
   'gpt-5-mini':       { i: 0.25,  c: 0.025,  o: 2.00  },
-  // gpt-4o: not in 2026-06-01 pricing table; treated as $0 (legacy/deprecated)
-  'gpt-4o':           { i: 0.00,  c: 0.000,  o: 0.00,  free: true  },
+  // gpt-4o / gpt-4o-mini: not in 2026-06-01 pricing table; treated as $0 (legacy background calls)
+  'gpt-4o':                    { i: 0.00, c: 0.000, o: 0.00, free: true },
+  'gpt-4o-mini':               { i: 0.00, c: 0.000, o: 0.00, free: true },
+  'gpt-4o-mini-2024-07-18':    { i: 0.00, c: 0.000, o: 0.00, free: true },
   // OpenAI — premium models
   'gpt-5.2':          { i: 1.75,  c: 0.175,  o: 14.00 },
   'gpt-5.2-codex':    { i: 1.75,  c: 0.175,  o: 14.00 },
