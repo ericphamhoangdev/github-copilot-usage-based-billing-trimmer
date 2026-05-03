@@ -536,10 +536,12 @@ function normalise(id) {
 // Source: https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing
 // All rates are $ per 1M tokens.
 const TOKEN_PRICING = {
-  // OpenAI
-  'gpt-4.1':          { i: 2.00,  c: 0.500,  o: 8.00,  free: true  },
-  'gpt-5-mini':       { i: 0.25,  c: 0.025,  o: 2.00,  free: true  },
+  // OpenAI — included models (count against plan's AI credit allowance)
+  'gpt-4.1':          { i: 2.00,  c: 0.500,  o: 8.00  },
+  'gpt-5-mini':       { i: 0.25,  c: 0.025,  o: 2.00  },
+  // gpt-4o: not in 2026-06-01 pricing table; treated as $0 (legacy/deprecated)
   'gpt-4o':           { i: 0.00,  c: 0.000,  o: 0.00,  free: true  },
+  // OpenAI — premium models
   'gpt-5.2':          { i: 1.75,  c: 0.175,  o: 14.00 },
   'gpt-5.2-codex':    { i: 1.75,  c: 0.175,  o: 14.00 },
   'gpt-5.3-codex':    { i: 1.75,  c: 0.175,  o: 14.00 },
@@ -562,7 +564,8 @@ const TOKEN_PRICING = {
   // xAI
   'grok-code-fast-1':  { i: 0.20, c: 0.020, o: 1.50  },
   // Fine-tuned (GitHub)
-  'raptor-mini':       { i: 0.25, c: 0.025, o: 2.00,  free: true  },
+  'raptor-mini':       { i: 0.25, c: 0.025, o: 2.00  }, // same pricing as gpt-5-mini
+  'goldeneye':         { i: 1.25, c: 0.125, o: 10.00 }, // same pricing as gpt-5.1-codex
 };
 
 function calcNewCost(model, fresh, cached, output) {
@@ -838,6 +841,7 @@ function pct(n) { return n.toFixed(1) + '%'; }
 function render({ perModel, totalPrompts, totalPremiumReqs, totalCostPro, totalCostProPlus, unknown, promptDetails, totalNewCost }) {
   const plan = planSelect.value;
   const planDef = plan === 'proplus' ? PRO_PLUS : PRO;
+  const planRate = planDef.monthly / planDef.requests;
   const planCost = plan === 'proplus' ? totalCostProPlus : totalCostPro;
   const usagePct = Math.min((totalPremiumReqs / planDef.requests) * 100, 100);
 
@@ -872,14 +876,14 @@ function render({ perModel, totalPrompts, totalPremiumReqs, totalCostPro, totalC
 
   // ── Cards ────────────────────────────────────────────────────────────────────────────────
   const cards = [
-    { label: 'Old Price (req-based)', value: fmtBig(planCost), sub: `${planDef.label} · multiplier billing`, cls: 'highlight' },
-    { label: 'New Price (token-based)', value: fmtBig(totalNewCost), sub: 'from 2026-06-01', cls: totalNewCost < planCost ? 'green' : 'yellow' },
+    { label: 'Old Price (req-based)', value: fmtTok(planCost), sub: `${planDef.label} · ${fmtTok(planRate)} per premium request`, cls: 'highlight' },
+    { label: 'New Price (token-based)', value: fmtTok(totalNewCost), sub: 'from 2026-06-01', cls: totalNewCost < planCost ? 'green' : 'yellow' },
     (() => {
       const diff = totalNewCost - planCost;
       const paying = diff > 0 ? 'extra' : 'less';
       const cls = diff > 0 ? 'yellow' : 'green';
       const sub = diff > 0 ? 'more expensive on tokens' : 'cheaper on tokens';
-      return { label: `You will pay ${paying}`, value: fmtBig(Math.abs(diff)), sub, cls };
+      return { label: `You will pay ${paying}`, value: fmtTok(Math.abs(diff)), sub, cls };
     })(),
   ];
   document.getElementById('cards').innerHTML = cards.map(c =>
@@ -898,7 +902,6 @@ function render({ perModel, totalPrompts, totalPremiumReqs, totalCostPro, totalC
   });
 
   // ── Prompt list ───────────────────────────────────────────────────────────
-  const planRate = planDef.monthly / planDef.requests;
   renderPrompts(promptDetails, planRate);
 
   // Unknown model warning
@@ -994,6 +997,17 @@ function renderTokenSources(s) {
         <div style="height:100%;width:${pct}%;background:var(--${cls})"></div>
       </div>
       <div style="width:170px;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums;flex-shrink:0">${val}</div>
+    </div>`;
+
+  el.innerHTML = `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px 20px;margin-top:10px">
+      <div style="font-size:1.15rem;font-weight:600;color:var(--text);margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Token Breakdown (session-wide) <a href="https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing" target="_blank" rel="noopener" style="font-size:1.05rem;font-weight:400;text-transform:none;letter-spacing:0;color:var(--accent);margin-left:8px">→ GitHub pricing docs</a></div>
+      ${bar('Input tokens',         100,         s.totalIn.toLocaleString() + ' tokens',                          'accent')}
+      ${bar('↳ cached input (discounted rate)', cachedShare, s.totalCached.toLocaleString() + ' (' + cachedShare + '%)', 'green')}
+      ${bar('↳ non-cached input (full rate)', freshShare, s.totalFresh.toLocaleString() + ' (' + freshShare + '%)', 'yellow')}
+      ${bar('Tool schemas (all)',    schemaShare, s.totalSchemaToksAcrossReqs.toLocaleString() + ' (' + schemaShare + '% of input)', 'yellow')}
+      ${bar('↳ unused schemas 🚨',   wasteShare,  s.totalUnusedSchemaToksAcrossReqs.toLocaleString() + ' (' + wasteShare + '% of input)', 'red')}
+      ${bar('Output tokens',        Math.min(100, Math.round(s.totalOut / s.totalIn * 100)), s.totalOut.toLocaleString() + ' tokens', 'accent')}
     </div>`;
 }
 
