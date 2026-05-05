@@ -1,4 +1,4 @@
-# GitHub Copilot Usage-Based Billing Trimmer
+# GitHub Copilot Usage-Based Billing Trimmer / Cost Optimizer
 
 ## 👉 [Open the tool](https://ericphamhoangdev.github.io/github-copilot-usage-based-billing-trimmer/) — no install, runs entirely in your browser
 
