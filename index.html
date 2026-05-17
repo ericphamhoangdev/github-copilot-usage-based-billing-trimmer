@@ -369,6 +369,64 @@
     max-height: 220px; overflow-y: auto; line-height: 1.45;
   }
   .msg-content.empty { color: rgba(139,148,158,0.4); font-style: italic; }
+  /* System message section breakdown */
+  .sys-breakdown {
+    margin: 5px 0 0;
+    border: 1px solid rgba(188,140,255,0.2);
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  .sys-breakdown > summary {
+    padding: 5px 10px;
+    background: rgba(188,140,255,0.07);
+    font-size: 1.1rem;
+    color: var(--purple);
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    user-select: none;
+  }
+  .sys-breakdown > summary::-webkit-details-marker { display: none; }
+  .sys-breakdown > summary::before { content: '▶'; font-size: 0.8rem; color: var(--muted); transition: transform 0.15s; flex-shrink: 0; }
+  .sys-breakdown[open] > summary::before { transform: rotate(90deg); }
+  .chunk-row {
+    display: block;
+    border-top: 1px solid rgba(48,54,61,0.6);
+  }
+  .chunk-row > summary {
+    padding: 4px 10px;
+    font-size: 1.1rem;
+  }
+  .chunk-row > summary::-webkit-details-marker { display: none; }
+  .chunk-row[open] > summary .chunk-chevron { transform: rotate(90deg); }
+  .chunk-label {
+    width: 170px; flex-shrink: 0;
+    font-family: 'SFMono-Regular', Consolas, monospace; font-size: 1.0rem;
+    color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .chunk-bar {
+    flex: 1; height: 10px;
+    background: rgba(48,54,61,0.7);
+    border-radius: 3px; overflow: hidden;
+  }
+  .chunk-bar-fill { height: 100%; background: var(--purple); opacity: 0.65; }
+  .chunk-stats { width: 220px; text-align: right; flex-shrink: 0; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 1.05rem; }
+  .chunk-content {
+    background: #070a10;
+    border-top: 1px solid rgba(48,54,61,0.5);
+    padding: 8px 12px;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-size: 1.05rem;
+    color: #8b949e;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 320px;
+    overflow-y: auto;
+    line-height: 1.45;
+    margin: 0;
+  }
   /* Response section */
   .resp-section { margin-top: 10px; border-top: 1px solid rgba(48,54,61,0.4); padding-top: 8px; }
   .resp-label { font-size: 1rem; color: var(--muted); margin-bottom: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
@@ -566,7 +624,6 @@ const MULTIPLIERS = {
   'gpt-5.4-mini':       0.33,
   'gpt-5.4-nano':       0.25,
   'gpt-5.5':            7.5,
-  'grok-code-fast-1':   0.25,
   'raptor-mini':        0,
 };
 
@@ -617,8 +674,6 @@ const TOKEN_PRICING = {
   'gemini-2.5-pro':    { i: 1.25, c: 0.125, o: 10.00 },
   'gemini-3-flash':    { i: 0.50, c: 0.050, o: 3.00  },
   'gemini-3.1-pro':    { i: 2.00, c: 0.200, o: 12.00 },
-  // xAI
-  'grok-code-fast-1':  { i: 0.20, c: 0.020, o: 1.50  },
   // Fine-tuned (GitHub)
   'raptor-mini':       { i: 0.25, c: 0.025, o: 2.00  }, // same pricing as gpt-5-mini
   'goldeneye':         { i: 1.25, c: 0.125, o: 10.00 }, // same pricing as gpt-5.1-codex
@@ -659,8 +714,15 @@ function loadFile(file) {
   const reader = new FileReader();
   reader.onload = e => {
     try {
-      const data = JSON.parse(e.target.result);
-      if (!Array.isArray(data.prompts)) throw new Error('Missing "prompts" array — use Export Debug Logs');
+      let data = JSON.parse(e.target.result);
+      // Normalise single-prompt export: { prompt, promptId, logs, ... } → { prompts: [data] }
+      if (!Array.isArray(data.prompts)) {
+        if (typeof data.prompt === 'string' && Array.isArray(data.logs)) {
+          data = { prompts: [data] };
+        } else {
+          throw new Error('Missing "prompts" array — use Export Debug Logs');
+        }
+      }
       scanData = scan(data);
       dropZone.classList.add('has-file');
       document.getElementById('drop-label').textContent = '📄 ' + file.name;
@@ -731,10 +793,20 @@ function scan(data) {
     const reqDetails = [];
 
     // ── Tool-bloat detection (per prompt) ────────────────────────────────
-    // Tools the model actually invoked (kind:'toolCall' entries):
+    // Tools the model actually invoked:
+    // 1) top-level kind:'toolCall' log entries (VS Code built-ins, successful MCP calls)
+    // 2) requestMessages.messages[].toolCalls — catches tools like manage_todo_list and
+    //    MCP calls that errored before a log entry was written (e.g. MCP server down)
     const usedToolNames = new Set();
     for (const log of prompt.logs) {
       if (log.kind === 'toolCall' && log.tool) usedToolNames.add(log.tool);
+      if (log.kind === 'request') {
+        for (const msg of (log.requestMessages?.messages ?? [])) {
+          for (const tc of (msg.toolCalls ?? [])) {
+            if (tc.function?.name) usedToolNames.add(tc.function.name);
+          }
+        }
+      }
     }
     // Tool schemas shipped — take the first request that defines them:
     let allToolNames = [];
@@ -1122,6 +1194,55 @@ function renderTokenSources(s) {
     </div>`;
 }
 
+function parseSysChunks(text) {
+  const chunks = [];
+  // Find top-level XML-like block tags that open at the start of a line
+  const sectionRe = /(^|\n)(<([A-Za-z][A-Za-z0-9_\-]*)(?:\s[^>]*)?>)/g;
+  const positions = [];
+  let m;
+  while ((m = sectionRe.exec(text)) !== null) {
+    positions.push({ start: m.index + (m[1] === '\n' ? 1 : 0), tagName: m[3] });
+  }
+  if (positions.length === 0) {
+    if (text.trim()) chunks.push({ label: '(all)', text: text.trim(), charCount: text.length });
+    return chunks;
+  }
+  if (positions[0].start > 0) {
+    const pre = text.slice(0, positions[0].start).trim();
+    if (pre) chunks.push({ label: '(preamble)', text: pre, charCount: pre.length });
+  }
+  for (let i = 0; i < positions.length; i++) {
+    const end = i + 1 < positions.length ? positions[i + 1].start : text.length;
+    const sec = text.slice(positions[i].start, end).trim();
+    chunks.push({ label: positions[i].tagName, text: sec, charCount: sec.length });
+  }
+  return chunks;
+}
+
+function renderSysBreakdown(text, id) {
+  const chunks = parseSysChunks(text);
+  if (chunks.length < 2) return '';
+  const totalChars = chunks.reduce((s, c) => s + c.charCount, 0);
+  const rows = chunks.map(c => {
+    const pct = totalChars > 0 ? Math.round(c.charCount / totalChars * 100) : 0;
+    const estTok = Math.round(c.charCount / 4);
+    const label = c.label.startsWith('(') ? c.label : `&lt;${escHtml(c.label)}&gt;`;
+    return `<details class="chunk-row">
+      <summary style="display:flex;align-items:center;gap:10px;list-style:none;cursor:pointer;padding:4px 0">
+        <span style="font-size:0.8rem;color:var(--muted);flex-shrink:0;transition:transform 0.15s" class="chunk-chevron">▶</span>
+        <div class="chunk-label" title="${escHtml(c.label)}">${label}</div>
+        <div class="chunk-bar"><div class="chunk-bar-fill" style="width:${pct}%"></div></div>
+        <div class="chunk-stats">${c.charCount.toLocaleString()} chars · ~${estTok.toLocaleString()} tok · ${pct}%</div>
+      </summary>
+      <pre class="chunk-content">${escHtml(c.text ?? '')}</pre>
+    </details>`;
+  }).join('');
+  return `<details class="sys-breakdown" id="${escHtml(id)}">
+    <summary>📊 system msg breakdown <span style="margin-left:auto;color:var(--muted);font-weight:400;font-size:1.05rem">${chunks.length} sections · ${totalChars.toLocaleString()} chars total</span></summary>
+    ${rows}
+  </details>`;
+}
+
 function buildReqItem(pi, ri, r, planRate) {
   const cacheRate = r.promptTokens > 0 ? Math.round(r.cachedTokens / r.promptTokens * 100) : 0;
   const tokenSummary = r.promptTokens > 0
@@ -1158,6 +1279,7 @@ function buildReqItem(pi, ri, r, planRate) {
       : '';
     const contentDisplay = msg.text.trim() || '(empty)';
     const emptyClass = msg.text.trim() ? '' : ' empty';
+    const breakdown = roleIdx === 0 && msg.text.trim() ? renderSysBreakdown(msg.text, `sbd-${pi}-${ri}-${mi}`) : '';
     return `<div class="msg-row">
       <div class="msg-meta">
         <span class="role-badge ${roleCls}">${roleLabel}</span>
@@ -1165,6 +1287,7 @@ function buildReqItem(pi, ri, r, planRate) {
       </div>
       ${toolStr}
       <div class="msg-content${emptyClass}">${escHtml(contentDisplay)}</div>
+      ${breakdown}
     </div>`;
   }).join('');
 
